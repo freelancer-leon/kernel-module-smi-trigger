@@ -1,10 +1,10 @@
 #include <linux/device.h>
 #include <linux/fs.h>
-#include <linux/init.h>   
-#include <linux/kernel.h> 
-#include <linux/module.h> 
+#include <linux/init.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <asm/io.h>
 
-#define SUCCESS 0
 #define DEVICE_NAME "smitrigger"
 #define CLASS_NAME "smitriggerClass"
 
@@ -35,7 +35,7 @@ static int __init smitrigger_init(void) {
   printk(KERN_INFO "Smitrigger registered correctly with major number %d\n",
          majorNumber);
 
-  smitriggerClass = class_create(THIS_MODULE, CLASS_NAME);
+  smitriggerClass = class_create(CLASS_NAME);
 
   if (IS_ERR(smitriggerClass)) {
     unregister_chrdev(majorNumber, DEVICE_NAME);
@@ -58,7 +58,7 @@ static int __init smitrigger_init(void) {
 }
 
 static void __exit smitrigger_exit(void) {
-  device_destroy(smitriggerClass, MKDEV(majorNumber, 0)); 
+  device_destroy(smitriggerClass, MKDEV(majorNumber, 0));
   class_unregister(smitriggerClass);
   class_destroy(smitriggerClass);
   unregister_chrdev(majorNumber, DEVICE_NAME);
@@ -79,7 +79,7 @@ static int device_release(struct inode *inode, struct file *file) {
 }
 
 static ssize_t device_read(struct file *filp,
-                           char *buffer, 
+                           char *buffer,
                            size_t length,
                            loff_t *offset) {
   printk(KERN_INFO "Smitrigger read\n");
@@ -89,12 +89,31 @@ static ssize_t device_read(struct file *filp,
 
 static ssize_t device_write(struct file *filp, const char *buff, size_t len,
                             loff_t *off) {
+  uint8_t smm_response = 0x0;
+  uint32_t smi_count = 0x0;
+
   printk(KERN_ALERT "Smitrigger write. Software SMI gets triggered.\n");
-  asm volatile("mov $0x0, %eax");
-  asm volatile("out %eax, $0xb2");
+
+  // check smi count
+  rdmsrl(MSR_SMI_COUNT, smi_count);
+  printk(KERN_INFO "SMI counter earlier is 0x%x.\n", smi_count);
+
+  //check the initial value recieve from 0xB2 port
+  smm_response = inb(0xb2);
+  printk(KERN_INFO "Data recieved from port 0xB2 is 0x%x.\n", smm_response);
+
+  //write to 0xB2 port to cause SMI
+  outb(0x80, 0xb2);
+
+  // Check the respose
+  smm_response = inb(0xb2);
+  printk(KERN_INFO "Data recieved after is 0x%x.\n", smm_response);
+
+  rdmsrl(MSR_SMI_COUNT, smi_count);
+  printk(KERN_INFO "SMI counter later is 0x%x.\n", smi_count);
+
   return len;
 }
-
 
 module_init(smitrigger_init);
 module_exit(smitrigger_exit);
