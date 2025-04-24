@@ -4,9 +4,12 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <asm/io.h>
+#include <linux/uaccess.h>
 
 #define DEVICE_NAME "smitrigger"
 #define CLASS_NAME "smitriggerClass"
+
+extern pid_t mydbg_smi_pid;
 
 static int device_open(struct inode *, struct file *);
 static int device_release(struct inode *, struct file *);
@@ -22,7 +25,6 @@ static int majorNumber;
 static struct class *smitriggerClass = NULL;
 static struct device *smitriggerDevice = NULL;
 
-
 static int __init smitrigger_init(void) {
   printk(KERN_INFO "Hello from smitrigger\n");
 
@@ -35,7 +37,7 @@ static int __init smitrigger_init(void) {
   printk(KERN_INFO "Smitrigger registered correctly with major number %d\n",
          majorNumber);
 
-  smitriggerClass = class_create(CLASS_NAME);
+  smitriggerClass = class_create(THIS_MODULE, CLASS_NAME);
 
   if (IS_ERR(smitriggerClass)) {
     unregister_chrdev(majorNumber, DEVICE_NAME);
@@ -87,7 +89,7 @@ static ssize_t device_read(struct file *filp,
   return 0;
 }
 
-static ssize_t device_write(struct file *filp, const char *buff, size_t len,
+static ssize_t device_write(struct file *filp, const char *buff, size_t count,
                             loff_t *off) {
   uint8_t smm_response = 0x0;
   uint32_t smi_count = 0x0;
@@ -103,7 +105,27 @@ static ssize_t device_write(struct file *filp, const char *buff, size_t len,
   printk(KERN_INFO "Data recieved from port 0xB2 is 0x%x.\n", smm_response);
 
   //write to 0xB2 port to cause SMI
-  outb(0x80, 0xb2);
+  //outb(0x80, 0xb2);
+  if (count) {
+     char buf[64];
+     pid_t val;
+     int ret;
+
+     if (count >= sizeof(buf))
+       return -EINVAL;
+
+     if (copy_from_user(&buf, buff, count))
+       return -EFAULT;
+
+     buf[count] = 0;
+
+     ret = kstrtos32(buf, 10, &val);
+     if (ret < 0)
+       return ret;
+
+     mydbg_smi_pid = val;
+     printk("[%d] will send SMI# when it triggers #PF\n", mydbg_smi_pid);
+  }
 
   // Check the respose
   smm_response = inb(0xb2);
@@ -112,7 +134,7 @@ static ssize_t device_write(struct file *filp, const char *buff, size_t len,
   rdmsrl(MSR_SMI_COUNT, smi_count);
   printk(KERN_INFO "SMI counter later is 0x%x.\n", smi_count);
 
-  return len;
+  return count;
 }
 
 module_init(smitrigger_init);

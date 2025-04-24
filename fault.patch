@@ -1,0 +1,24 @@
+diff --git a/arch/x86/mm/fault.c b/arch/x86/mm/fault.c
+index c494c8c05824..c4741a58122a 100644
+--- a/arch/x86/mm/fault.c
++++ b/arch/x86/mm/fault.c
+@@ -1541,12 +1541,17 @@ trace_page_fault_entries(struct pt_regs *regs, unsigned long error_code,
+ 	else
+ 		trace_page_fault_kernel(address, regs, error_code);
+ }
+-
++pid_t mydbg_smi_pid;
++EXPORT_SYMBOL(mydbg_smi_pid);
+ dotraplinkage void
+ do_page_fault(struct pt_regs *regs, unsigned long error_code, unsigned long address)
+ {
+ 	enum ctx_state prev_state;
+-
++	struct task_struct *tsk = current;
++	if (mydbg_smi_pid && tsk->pid == mydbg_smi_pid) {
++		outb(0x80, 0xb2); /* write to 0xB2 port to cause SMI# */
++		printk("%s:%d: [%d]%s had sent SMI#\n", __func__, __LINE__, tsk->pid, tsk->comm);
++	}
+ 	prev_state = exception_enter();
+ 	trace_page_fault_entries(regs, error_code, address);
+ 	__do_page_fault(regs, error_code, address);

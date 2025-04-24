@@ -1,3 +1,10 @@
-#!/bin/sh
+#!/usr/bin/env bash
+set -x
 
-sudo sh -c "echo bla > /dev/smitrigger"
+SMI_TRIGGER="/dev/smitrigger"
+
+if [ -c $SMI_TRIGGER ]; then
+   ./segment_fault &
+   sleep 5
+   echo $! > $SMI_TRIGGER
+fi
